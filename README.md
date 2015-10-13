@@ -1,16 +1,8 @@
 # EOS
 
-## Composer Usage
-[![Latest Stable Version](https://poser.pugx.org/jlawrence/eos/v/stable)](https://packagist.org/packages/jlawrence/eos) [![Total Downloads](https://poser.pugx.org/jlawrence/eos/downloads)](https://packagist.org/packages/jlawrence/eos)  [![License](https://poser.pugx.org/jlawrence/eos/license)](https://packagist.org/packages/jlawrence/eos)
+Tweaks made to allow the variable replacement in the postfix version, beyond that all code is the same as the original so full credit to https://github.com/jlawrence11/Classes.
 
-Add the dependency:
-
-	"require": {
-	    "jlawrence/eos": "3.*"
-	}
-
-
-`$ composer update` and you're done.
+The use case for these changes was that same formulas were being run many thousands of times with different variables.  With these tweaks it is possible to convert the formula from Infix to Postfix and then save the result. This result can then be solved by passing it different variables.
 
 ## Equation Operating System
 

@@ -11,6 +11,8 @@
  * developer.  It is a safe way to evaluate expressions without putting
  * the system at risk.
  *
+ * Modified slightly by Warren Rodie on 2015-10-13 to add in processing of 
+ * variables in PF
  *
  * @author Jon Lawrence <jlawrence11@gmail.com>
  * @copyright Copyright ©2005-2015, Jon Lawrence
@@ -134,6 +136,9 @@ class Parser {
         // if an equation was not passed, use the one that was passed in the constructor
         //$infix = (isset($infix)) ? $infix : $this->inFix;
 
+        //replace scientific notation with normal notation (2e-9 to 2*10^-9)
+        $infix = preg_replace('/([\d])([eE])(-?\d)/', '$1*10^$3', $infix);
+
         //check to make sure 'valid' equation
         self::checkInfix($infix);
         $pf = array();
@@ -167,11 +172,32 @@ class Parser {
                 }
 
             }
+            elseif(preg_match('/[a-z]/i', $chr)) {
+                if(preg_match('/[0-9.]/i', $lChar)) {
+                    $ops->push('*');
+                    $pfIndex++;	// increase the index so as not to overlap anything
+                }
+                if(isset($pf[$pfIndex])) {
+                    $pf[$pfIndex] .= $chr;
+                } else {
+                    $pf[++$pfIndex] = $chr;
+                }
+            }
             // If the character opens a set e.g. '(' or '['
             elseif(in_array($chr, self::$SEP['open'])) {
                 // if the last character was a number, place an assumed '*' on the stack
                 if(preg_match('/[0-9.]/i', $lChar))
                     $ops->push('*');
+
+                if(isset($pf[$pfIndex]) and preg_match('/^[a-z]/',$pf[$pfIndex]))    {
+                    if(in_array($pf[$pfIndex], self::$FNC)) {
+                        $ops->push($pf[$pfIndex]);
+                        unset($pf[$pfIndex--]);
+                    }
+                    else    {
+                        $ops->push('*');
+                    }
+                }
 
                 $ops->push($chr);
             }
@@ -262,7 +288,7 @@ class Parser {
         // Loop through each number/operator
         for($i=0;$i<count($pf); $i++) {
             // If the string isn't an operator, add it to the temp var as a holding place
-            if(!in_array($pf[$i], array_merge(self::$ST, self::$ST1, self::$ST2))) {
+            if(!in_array($pf[$i], array_merge(self::$ST, self::$ST1, self::$ST2, self::$FNC))) {
                 $temp[$hold++] = $pf[$i];
             }
             // ...Otherwise perform the operator on the last two numbers
@@ -290,7 +316,50 @@ class Parser {
                         $temp[$hold-1] = self::factorial($temp[$hold-1]);
                         $hold++;
                         break;
-                    case '%':
+                    case 'sin':
+                        $temp[$hold-1] = Trig::sin($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "cos":
+                        $temp[$hold-1] = Trig::cos($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "tan":
+                        $temp[$hold-1] = Trig::tan($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "sec":
+                        $temp[$hold-1] = Trig::sec($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "csc":
+                        $temp[$hold-1] = Trig::csc($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "cot":
+                        $temp[$hold-1] = Trig::cot($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "abs":
+                        $temp[$hold-1] = Trig::abs($temp[$hold-1]);
+                        $hold++;
+                        break;
+                    case "ln":
+                        $ans = log($temp[$hold-1]);
+                        if(is_nan($ans) || is_infinite($ans)) {
+                            throw new \Exception("Result of 'ln({$temp[$hold-1]}) = {$ans}' is either infinite or a non-number in ". self::$inFix, Math::E_NAN);
+                        }
+                        $temp[$hold-1] = $ans;
+                        $hold++;
+                        break;
+                    case "sqrt":
+                        if($temp[$hold-1] < 0) {
+                            throw new \Exception("Result of 'sqrt({$temp[$hold-1]}) = i' in ". self::$inFix .".  We can't handle imaginary numbers", Math::E_NAN);
+                        }
+                        $temp[$hold-1] = sqrt($temp[$hold-1]);
+                        $hold++;
+                        break;
+                   case '%':
                         if($temp[$hold-1] == 0) {
                             throw new \Exception("Division by 0 on: '{$temp[$hold-2]} % {$temp[$hold-1]}' in ". self::$inFix, Math::E_DIV_ZERO);
                         }
@@ -322,6 +391,8 @@ class Parser {
      */
     public static function solve($equation, $values = null) {
         if(is_array($equation)) {
+            if($values)
+                $equation = self::replacePFVars($equation, $values);
             return self::solvePF($equation);
         } else {
             self::$inFix = $equation;
@@ -435,6 +506,35 @@ class Parser {
             $infix = str_replace($match[0], "({$ans})", $infix);
         }
         return $infix;
+    }
+
+    protected static function replacePFVars($pf, $vArray)
+    {
+        if(!$vArray or !count($vArray)) {
+            return $pf;
+        }
+        foreach($pf as &$i)  {
+            if(preg_match('/[a-z]/i',$i))   {
+                if(in_array($i, self::$FNC))    {
+                    continue;
+                }
+                elseif(strtolower($i) == 'pi')  {
+                    $i = pi();
+                    continue;
+                }
+                elseif(strtolower($i) == 'e')  {
+                    $i = exp(1);
+                    continue;
+                }
+                elseif(isset($vArray[$i]) and is_numeric($vArray[$i]))  {
+                    $i = strval($vArray[$i]);
+                    continue;
+                }
+                throw new \Exception("Variable replacement does not exist for '". $i ." in " . self::$inFix . ".", Math::E_NO_VAR);
+            }
+        }
+        unset($i);
+        return $pf;
     }
 
     protected static function replaceVars($infix, $vArray)
